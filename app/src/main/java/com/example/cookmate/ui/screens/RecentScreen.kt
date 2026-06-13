@@ -45,7 +45,7 @@ fun RecentScreen(
                 modifier = Modifier.padding(top = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(uiState.recentMeals) { recent ->
+                items(uiState.recentMeals, key = { it.meal.idMeal }) { recent ->
                     val note = uiState.mealNotes[recent.meal.idMeal]
                     val supportingText = buildString {
                         if (recent.meal.idMeal.startsWith("local-")) {

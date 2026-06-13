@@ -28,8 +28,8 @@ import com.example.cookmate.data.db.entity.ShoppingListItemEntity
         MealNoteEntity::class,
         ShoppingListItemEntity::class
     ],
-    version = 3,
-    exportSchema = false
+    version = 4,
+    exportSchema = true
 )
 @TypeConverters(IngredientConverter::class)
 abstract class CookMateDatabase : RoomDatabase() {

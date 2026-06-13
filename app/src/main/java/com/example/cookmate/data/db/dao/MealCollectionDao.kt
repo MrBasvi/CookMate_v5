@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import com.example.cookmate.data.db.entity.CollectionMealCrossRef
 import com.example.cookmate.data.db.entity.MealCollectionEntity
 import com.example.cookmate.data.db.relations.MealCollectionMembershipEntity
@@ -44,8 +45,33 @@ interface MealCollectionDao {
     )
     fun observeMemberships(mealId: String): Flow<List<MealCollectionMembershipEntity>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertCollection(collection: MealCollectionEntity): Long
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1
+            FROM collection_meals
+            WHERE collectionId = :collectionId AND mealId = :mealId
+        )
+        """
+    )
+    suspend fun isMealInCollection(collectionId: Long, mealId: String): Boolean
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertCollection(collection: MealCollectionEntity): Long
+
+    @Update
+    suspend fun updateCollection(collection: MealCollectionEntity)
+
+    @Transaction
+    suspend fun upsertCollection(collection: MealCollectionEntity): Long {
+        val insertedId = insertCollection(collection)
+        return if (insertedId == -1L) {
+            updateCollection(collection)
+            collection.collectionId
+        } else {
+            insertedId
+        }
+    }
 
     @Query("SELECT * FROM meal_collections WHERE collectionId = :collectionId")
     suspend fun getCollection(collectionId: Long): MealCollectionEntity?

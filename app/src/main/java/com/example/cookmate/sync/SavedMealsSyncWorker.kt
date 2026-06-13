@@ -20,8 +20,12 @@ class SavedMealsSyncWorker(
         val historyLimit = entryPoint.preferencesManager().historyLimitFlow.first()
 
         return try {
-            entryPoint.savedMealsSyncUseCase().sync(historyLimit)
-            Result.success()
+            val result = entryPoint.savedMealsSyncUseCase().sync(historyLimit)
+            if (result.failedMealIds.isEmpty()) {
+                Result.success()
+            } else {
+                Result.retry()
+            }
         } catch (throwable: CancellationException) {
             throw throwable
         } catch (_: Exception) {

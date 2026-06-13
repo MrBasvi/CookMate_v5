@@ -21,6 +21,18 @@ sealed class MealDetailUiState {
     data class Error(val message: String) : MealDetailUiState()
 }
 
+sealed class SyncUiState {
+    data object Idle : SyncUiState()
+    data object Running : SyncUiState()
+    data class Success(val syncedCount: Int) : SyncUiState()
+    data class Partial(val syncedCount: Int, val requestedCount: Int) : SyncUiState()
+    data class Error(val message: String) : SyncUiState()
+}
+
+sealed class CookMateUiEvent {
+    data class Message(val text: String) : CookMateUiEvent()
+}
+
 data class CookMateUiState(
     val searchQuery: String = "",
     val mealListState: MealUiState = MealUiState.Empty,
@@ -43,5 +55,7 @@ data class CookMateUiState(
     val backgroundSyncEnabled: Boolean = true,
     val historyLimit: Int = 30,
     val startDestination: String = "",
-    val syncStatusMessage: String? = null
+    val syncUiState: SyncUiState = SyncUiState.Idle,
+    val syncStatusMessage: String? = null,
+    val shoppingFeedbackMessage: String? = null
 )

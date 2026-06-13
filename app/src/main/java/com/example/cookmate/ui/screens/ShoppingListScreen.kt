@@ -111,9 +111,11 @@ fun ShoppingListScreen(
                     Button(
                         onClick = {
                             onAddManualItem(ingredientDraft, measureDraft)
-                            ingredientDraft = ""
-                            measureDraft = ""
-                            selectedTab = SHOPPING_TAB_LIST
+                            if (ingredientDraft.isNotBlank()) {
+                                ingredientDraft = ""
+                                measureDraft = ""
+                                selectedTab = SHOPPING_TAB_LIST
+                            }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {

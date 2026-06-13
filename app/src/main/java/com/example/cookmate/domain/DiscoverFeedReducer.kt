@@ -14,10 +14,6 @@ class DiscoverFeedReducer @Inject constructor() {
         showOnlyFavorites: Boolean,
         remoteState: RemoteSearchState
     ): MealUiState {
-        if (query.isBlank()) {
-            return MealUiState.Empty
-        }
-
         val baseMeals = if (query.isBlank()) {
             recentMeals.filterNot { it.idMeal.startsWith("local-") }
         } else {

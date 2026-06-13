@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.example.cookmate.data.db.entity.ShoppingListItemEntity
 import kotlinx.coroutines.flow.Flow
@@ -39,4 +40,27 @@ interface ShoppingListDao {
 
     @Query("DELETE FROM shopping_list_items")
     suspend fun deleteAllItems()
+
+    @Transaction
+    suspend fun mergeUncheckedItem(ingredientName: String, measure: String): Long {
+        val existing = findUncheckedItem(ingredientName, measure)
+        return if (existing == null) {
+            insertItem(
+                ShoppingListItemEntity(
+                    ingredientName = ingredientName,
+                    measure = measure,
+                    quantityCount = 1,
+                    isChecked = false
+                )
+            )
+        } else {
+            updateItem(
+                existing.copy(
+                    quantityCount = existing.quantityCount + 1,
+                    addedAt = System.currentTimeMillis()
+                )
+            )
+            existing.itemId
+        }
+    }
 }

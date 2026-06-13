@@ -1,4 +1,4 @@
-package com.example.cookmate.ui.screens
+﻿package com.example.cookmate.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -79,11 +79,7 @@ fun DetailScreen(
 
     val currentMeal = (uiState.mealDetailState as? MealDetailUiState.Success)?.meal
     val isLocalMeal = mealId.startsWith("local-")
-    val shoppingFeedback = uiState.syncStatusMessage?.takeIf { message ->
-        message.contains("список покупок", ignoreCase = true) ||
-            message.contains("ингредиент", ignoreCase = true) ||
-            message.contains("позици", ignoreCase = true)
-    }
+    val shoppingFeedback = uiState.shoppingFeedbackMessage
 
     var showEditDialog by remember(mealId) { mutableStateOf(false) }
     var showDeleteDialog by remember(mealId) { mutableStateOf(false) }

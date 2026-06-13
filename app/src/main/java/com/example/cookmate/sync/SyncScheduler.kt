@@ -1,8 +1,10 @@
 package com.example.cookmate.sync
 
 import android.content.Context
+import androidx.work.Constraints
 import androidx.work.WorkManager
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
@@ -18,7 +20,12 @@ class SyncScheduler @Inject constructor(
         get() = WorkManager.getInstance(context)
 
     fun scheduleBackgroundSync() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
         val request = PeriodicWorkRequestBuilder<SavedMealsSyncWorker>(6, TimeUnit.HOURS)
+            .setConstraints(constraints)
             .build()
 
         workManager.enqueueUniquePeriodicWork(

@@ -19,7 +19,7 @@ class DiscoverFeedReducerTest {
     )
 
     @Test
-    fun blankQuery_returnsEmptyState() {
+    fun blankQuery_returnsRecentMeals() {
         val state = reducer.reduce(
             query = "",
             cachedMatches = emptyList(),
@@ -29,7 +29,8 @@ class DiscoverFeedReducerTest {
             remoteState = RemoteSearchState.Idle
         )
 
-        assertTrue(state is MealUiState.Empty)
+        assertTrue(state is MealUiState.Success)
+        assertEquals(listOf("1"), (state as MealUiState.Success).meals.map { it.idMeal })
     }
 
     @Test

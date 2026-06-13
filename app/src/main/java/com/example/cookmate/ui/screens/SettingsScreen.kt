@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.cookmate.navigation.CookMateRoutes
 import com.example.cookmate.ui.state.CookMateUiState
+import com.example.cookmate.ui.state.SyncUiState
 
 @Composable
 fun SettingsScreen(
@@ -37,9 +38,8 @@ fun SettingsScreen(
     } else {
         uiState.startDestination
     }
-    val syncMessage = uiState.syncStatusMessage?.takeIf { message ->
-        message.contains("синхро", ignoreCase = true)
-    }
+    val syncMessage = uiState.syncStatusMessage
+    val isSyncing = uiState.syncUiState is SyncUiState.Running
 
     LazyColumn(
         modifier = Modifier
@@ -158,7 +158,11 @@ fun SettingsScreen(
                         text = "Принудительно обновляет сохранённые рецепты сразу, не дожидаясь фонового запуска.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Button(onClick = onSyncNow, modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = onSyncNow,
+                        enabled = !isSyncing,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Text("Синхронизировать сейчас")
                     }
 

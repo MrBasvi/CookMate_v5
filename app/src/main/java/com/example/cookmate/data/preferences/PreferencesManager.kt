@@ -15,6 +15,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val PREFERENCES_NAME = "cookmate_preferences"
+private const val MIN_HISTORY_LIMIT = 1
+private const val MAX_HISTORY_LIMIT = 100
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = PREFERENCES_NAME)
 
@@ -45,7 +47,7 @@ class PreferencesManager @Inject constructor(
     }
 
     val historyLimitFlow: Flow<Int> = dataStore.data.map { preferences ->
-        preferences[HISTORY_LIMIT] ?: 30
+        (preferences[HISTORY_LIMIT] ?: 30).coerceIn(MIN_HISTORY_LIMIT, MAX_HISTORY_LIMIT)
     }
 
     val startDestinationFlow: Flow<String> = dataStore.data.map { preferences ->
@@ -72,7 +74,7 @@ class PreferencesManager @Inject constructor(
 
     suspend fun setHistoryLimit(limit: Int) {
         dataStore.edit { preferences ->
-            preferences[HISTORY_LIMIT] = limit
+            preferences[HISTORY_LIMIT] = limit.coerceIn(MIN_HISTORY_LIMIT, MAX_HISTORY_LIMIT)
         }
     }
 

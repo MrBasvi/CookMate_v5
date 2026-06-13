@@ -2,6 +2,9 @@ package com.example.cookmate.di
 
 import android.content.Context
 import androidx.room.Room
+import com.example.cookmate.data.db.MIGRATION_1_2
+import com.example.cookmate.data.db.MIGRATION_2_3
+import com.example.cookmate.data.db.MIGRATION_3_4
 import com.example.cookmate.data.db.dao.CachedMealDao
 import com.example.cookmate.data.db.CookMateDatabase
 import com.example.cookmate.data.db.dao.FavouriteMealDao
@@ -28,7 +31,9 @@ object DatabaseModule {
         context,
         CookMateDatabase::class.java,
         "cook_mate_database"
-    ).build()
+    )
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        .build()
     
     @Singleton
     @Provides

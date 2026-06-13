@@ -63,24 +63,7 @@ class ShoppingListService @Inject constructor(
     }
 
     private suspend fun mergeOrInsert(name: String, measure: String) {
-        val existing = shoppingListDao.findUncheckedItem(name, measure)
-        if (existing == null) {
-            shoppingListDao.insertItem(
-                ShoppingListItemEntity(
-                    ingredientName = name,
-                    measure = measure,
-                    quantityCount = 1,
-                    isChecked = false
-                )
-            )
-        } else {
-            shoppingListDao.updateItem(
-                existing.copy(
-                    quantityCount = existing.quantityCount + 1,
-                    addedAt = System.currentTimeMillis()
-                )
-            )
-        }
+        shoppingListDao.mergeUncheckedItem(name, measure)
     }
 
     private fun ShoppingListItemEntity.toModel() = ShoppingListItem(

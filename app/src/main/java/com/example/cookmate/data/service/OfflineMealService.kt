@@ -1,9 +1,13 @@
 package com.example.cookmate.data.service
 
+import androidx.room.withTransaction
+import com.example.cookmate.data.db.CookMateDatabase
 import com.example.cookmate.data.db.dao.CachedMealDao
+import com.example.cookmate.data.db.dao.MealCollectionDao
 import com.example.cookmate.data.db.dao.RecentMealDao
 import com.example.cookmate.data.db.dao.RecentMealProjection
 import com.example.cookmate.data.db.entity.CachedMealEntity
+import com.example.cookmate.data.db.entity.FavouriteMealEntity
 import com.example.cookmate.data.db.entity.RecentMealEntity
 import com.example.cookmate.data.model.Meal
 import com.example.cookmate.data.model.RecentMeal
@@ -15,9 +19,11 @@ import javax.inject.Singleton
 
 @Singleton
 class OfflineMealService @Inject constructor(
+    private val database: CookMateDatabase,
     private val cachedMealDao: CachedMealDao,
     private val recentMealDao: RecentMealDao,
-    private val favouriteMealDao: com.example.cookmate.data.db.dao.FavouriteMealDao
+    private val favouriteMealDao: com.example.cookmate.data.db.dao.FavouriteMealDao,
+    private val mealCollectionDao: MealCollectionDao
 ) : SyncLocalDataSource {
 
     fun searchCachedMeals(query: String): Flow<List<Meal>> =
@@ -40,14 +46,18 @@ class OfflineMealService @Inject constructor(
     }
 
     suspend fun deleteCachedMeal(mealId: String) {
-        recentMealDao.deleteRecentMeal(mealId)
-        cachedMealDao.deleteMeal(mealId)
+        database.withTransaction {
+            recentMealDao.deleteRecentMeal(mealId)
+            cachedMealDao.deleteMeal(mealId)
+        }
     }
 
     suspend fun markViewed(meal: Meal, historyLimit: Int) {
-        cacheMeal(meal)
-        recentMealDao.upsertRecentMeal(RecentMealEntity(mealId = meal.idMeal))
-        recentMealDao.trimToLimit(historyLimit)
+        database.withTransaction {
+            cachedMealDao.upsertMeal(meal.toEntity())
+            recentMealDao.upsertRecentMeal(RecentMealEntity(mealId = meal.idMeal))
+            recentMealDao.trimToLimit(historyLimit)
+        }
     }
 
     fun observeRecentMeals(limit: Int): Flow<List<RecentMeal>> =
@@ -70,20 +80,19 @@ class OfflineMealService @Inject constructor(
         recentMealDao.getRecentMealIds(limit)
 
     override suspend fun cacheSyncedMeal(meal: Meal) {
-        cacheMeal(meal)
+        database.withTransaction {
+            cachedMealDao.upsertMeal(meal.toEntity())
+            favouriteMealDao.getFavourite(meal.idMeal)?.let { favourite ->
+                favouriteMealDao.addFavourite(meal.toFavouriteEntity(favourite.addedAt))
+            }
+        }
     }
 
     override suspend fun clearStaleCache(cutoff: Long, protectedMealIds: List<String>) {
         clearStaleMeals(cutoff, protectedMealIds)
     }
 
-    internal fun setCollectionIdProvider(provider: suspend () -> List<String>) {
-        collectionIdProvider = provider
-    }
-
-    private var collectionIdProvider: (suspend () -> List<String>) = { emptyList() }
-
-    override suspend fun getCollectionMealIds(): List<String> = collectionIdProvider()
+    override suspend fun getCollectionMealIds(): List<String> = mealCollectionDao.getAllCollectionMealIds()
 
     private fun CachedMealEntity.toMeal() = Meal(
         idMeal = idMeal,
@@ -103,6 +112,17 @@ class OfflineMealService @Inject constructor(
         strInstructions = strInstructions,
         strMealThumb = strMealThumb,
         ingredients = ingredients
+    )
+
+    private fun Meal.toFavouriteEntity(addedAt: Long) = FavouriteMealEntity(
+        idMeal = idMeal,
+        strMeal = strMeal,
+        strCategory = strCategory,
+        strArea = strArea,
+        strInstructions = strInstructions,
+        strMealThumb = strMealThumb,
+        ingredients = ingredients,
+        addedAt = addedAt
     )
 
     private fun RecentMealProjection.toRecentMeal() = RecentMeal(

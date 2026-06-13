@@ -91,7 +91,7 @@ fun CollectionDetailScreen(
             Text("Пока в этой коллекции нет рецептов.")
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(collection.meals) { meal ->
+                items(collection.meals, key = { it.idMeal }) { meal ->
                     Column {
                         MealCardItem(
                             meal = meal,

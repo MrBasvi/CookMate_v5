@@ -64,8 +64,20 @@ fun FavoritesScreen(
     var mealAreaDraft by remember { mutableStateOf("") }
     var mealInstructionsDraft by remember { mutableStateOf("") }
     var mealImageUrlDraft by remember { mutableStateOf("") }
+    var mealTitleError by remember { mutableStateOf<String?>(null) }
+    var mealCategoryError by remember { mutableStateOf<String?>(null) }
+    var mealAreaError by remember { mutableStateOf<String?>(null) }
+    var mealInstructionsError by remember { mutableStateOf<String?>(null) }
+    var mealIngredientsError by remember { mutableStateOf<String?>(null) }
     val ingredientDrafts = remember { mutableStateListOf(IngredientDraft()) }
     var selectedTab by remember { mutableIntStateOf(BOOK_TAB_MY_RECIPES) }
+    val clearMealErrors = {
+        mealTitleError = null
+        mealCategoryError = null
+        mealAreaError = null
+        mealInstructionsError = null
+        mealIngredientsError = null
+    }
 
     Column(
         modifier = Modifier
@@ -134,7 +146,10 @@ fun FavoritesScreen(
         when (selectedTab) {
             BOOK_TAB_MY_RECIPES -> {
                 Button(
-                    onClick = { showCreateMealDialog = true },
+                    onClick = {
+                        clearMealErrors()
+                        showCreateMealDialog = true
+                    },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Добавить свой рецепт")
@@ -168,7 +183,7 @@ fun FavoritesScreen(
                             )
                         }
                     } else {
-                        items(uiState.localMeals) { meal ->
+                        items(uiState.localMeals, key = { it.idMeal }) { meal ->
                             val supportingText = uiState.mealNotes[meal.idMeal]?.let { note ->
                                 "Мой рецепт • Оценка: ${note.rating}/5"
                             } ?: "Мой рецепт"
@@ -197,7 +212,7 @@ fun FavoritesScreen(
                             )
                         }
                     } else {
-                        items(uiState.favoriteMeals) { meal ->
+                        items(uiState.favoriteMeals, key = { it.idMeal }) { meal ->
                             val supportingText = buildString {
                                 if (meal.idMeal.startsWith("local-")) {
                                     append("Мой рецепт")
@@ -232,7 +247,7 @@ fun FavoritesScreen(
                             )
                         }
                     } else {
-                        items(uiState.collections) { collection ->
+                        items(uiState.collections, key = { it.collectionId }) { collection ->
                             Card(modifier = Modifier.fillMaxWidth()) {
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Row(
@@ -329,31 +344,55 @@ fun FavoritesScreen(
 
     if (showCreateMealDialog) {
         AlertDialog(
-            onDismissRequest = { showCreateMealDialog = false },
+            onDismissRequest = {
+                clearMealErrors()
+                showCreateMealDialog = false
+            },
             title = { Text("Свой рецепт") },
             text = {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     item {
                         OutlinedTextField(
                             value = mealTitleDraft,
-                            onValueChange = { mealTitleDraft = it },
+                            onValueChange = {
+                                mealTitleDraft = it
+                                mealTitleError = null
+                            },
                             label = { Text("Название рецепта") },
+                            isError = mealTitleError != null,
+                            supportingText = mealTitleError?.let { error ->
+                                { Text(error) }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                     item {
                         OutlinedTextField(
                             value = mealCategoryDraft,
-                            onValueChange = { mealCategoryDraft = it },
+                            onValueChange = {
+                                mealCategoryDraft = it
+                                mealCategoryError = null
+                            },
                             label = { Text("Категория") },
+                            isError = mealCategoryError != null,
+                            supportingText = mealCategoryError?.let { error ->
+                                { Text(error) }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                     item {
                         OutlinedTextField(
                             value = mealAreaDraft,
-                            onValueChange = { mealAreaDraft = it },
+                            onValueChange = {
+                                mealAreaDraft = it
+                                mealAreaError = null
+                            },
                             label = { Text("Кухня или страна") },
+                            isError = mealAreaError != null,
+                            supportingText = mealAreaError?.let { error ->
+                                { Text(error) }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -373,13 +412,31 @@ fun FavoritesScreen(
                         )
                     }
                     item {
-                        IngredientEditor(items = ingredientDrafts, modifier = Modifier.fillMaxWidth())
+                        IngredientEditor(
+                            items = ingredientDrafts,
+                            modifier = Modifier.fillMaxWidth(),
+                            onChanged = { mealIngredientsError = null }
+                        )
+                        mealIngredientsError?.let { error ->
+                            Text(
+                                text = error,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                     item {
                         OutlinedTextField(
                             value = mealInstructionsDraft,
-                            onValueChange = { mealInstructionsDraft = it },
+                            onValueChange = {
+                                mealInstructionsDraft = it
+                                mealInstructionsError = null
+                            },
                             label = { Text("Инструкция") },
+                            isError = mealInstructionsError != null,
+                            supportingText = mealInstructionsError?.let { error ->
+                                { Text(error) }
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             minLines = 4
                         )
@@ -389,7 +446,37 @@ fun FavoritesScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (mealTitleDraft.isNotBlank()) {
+                        mealTitleError = requiredFieldError(
+                            value = mealTitleDraft,
+                            fieldName = "название рецепта"
+                        )
+                        mealCategoryError = requiredFieldError(
+                            value = mealCategoryDraft,
+                            fieldName = "категорию"
+                        )
+                        mealAreaError = requiredFieldError(
+                            value = mealAreaDraft,
+                            fieldName = "кухню или страну"
+                        )
+                        mealInstructionsError = requiredFieldError(
+                            value = mealInstructionsDraft,
+                            fieldName = "инструкцию"
+                        )
+                        mealIngredientsError = if (ingredientDrafts.none { it.name.isNotBlank() }) {
+                            "Добавьте хотя бы один ингредиент"
+                        } else {
+                            null
+                        }
+
+                        val hasErrors = listOf(
+                            mealTitleError,
+                            mealCategoryError,
+                            mealAreaError,
+                            mealInstructionsError,
+                            mealIngredientsError
+                        ).any { it != null }
+
+                        if (!hasErrors) {
                             onCreateCustomMeal(
                                 mealTitleDraft,
                                 mealCategoryDraft,
@@ -404,6 +491,7 @@ fun FavoritesScreen(
                             mealAreaDraft = ""
                             mealInstructionsDraft = ""
                             mealImageUrlDraft = ""
+                            clearMealErrors()
                             ingredientDrafts.clear()
                             ingredientDrafts.add(IngredientDraft())
                         }
@@ -413,10 +501,23 @@ fun FavoritesScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCreateMealDialog = false }) {
+                TextButton(
+                    onClick = {
+                        clearMealErrors()
+                        showCreateMealDialog = false
+                    }
+                ) {
                     Text("Отмена")
                 }
             }
         )
+    }
+}
+
+private fun requiredFieldError(value: String, fieldName: String): String? {
+    return if (value.isBlank()) {
+        "Заполните $fieldName"
+    } else {
+        null
     }
 }

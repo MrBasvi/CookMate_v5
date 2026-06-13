@@ -1,5 +1,7 @@
 package com.example.cookmate.data.service
 
+import androidx.room.withTransaction
+import com.example.cookmate.data.db.CookMateDatabase
 import com.example.cookmate.data.db.dao.MealCollectionDao
 import com.example.cookmate.data.db.entity.CollectionMealCrossRef
 import com.example.cookmate.data.db.entity.MealCollectionEntity
@@ -17,13 +19,10 @@ import kotlinx.coroutines.flow.map
 
 @Singleton
 class MealCollectionService @Inject constructor(
+    private val database: CookMateDatabase,
     private val mealCollectionDao: MealCollectionDao,
     private val offlineMealService: OfflineMealService
 ) {
-
-    init {
-        offlineMealService.setCollectionIdProvider { mealCollectionDao.getAllCollectionMealIds() }
-    }
 
     fun observeCollections(): Flow<List<MealCollectionSummary>> =
         mealCollectionDao.observeCollectionSummaries().map { summaries ->
@@ -40,18 +39,23 @@ class MealCollectionService @Inject constructor(
             memberships.map { it.toModel() }
         }
 
+    suspend fun isMealInCollection(collectionId: Long, mealId: String): Boolean =
+        mealCollectionDao.isMealInCollection(collectionId, mealId)
+
     suspend fun createCollection(title: String, description: String): Long {
         val trimmedTitle = title.trim()
         if (trimmedTitle.isEmpty()) {
             throw IllegalArgumentException("Collection title cannot be empty")
         }
 
-        return mealCollectionDao.upsertCollection(
-            MealCollectionEntity(
-                title = trimmedTitle,
-                description = description.trim()
+        return database.withTransaction {
+            mealCollectionDao.upsertCollection(
+                MealCollectionEntity(
+                    title = trimmedTitle,
+                    description = description.trim()
+                )
             )
-        )
+        }
     }
 
     suspend fun updateCollection(collectionId: Long, title: String, description: String) {
@@ -62,45 +66,57 @@ class MealCollectionService @Inject constructor(
             throw IllegalArgumentException("Collection title cannot be empty")
         }
 
-        mealCollectionDao.upsertCollection(
-            current.copy(
-                title = trimmedTitle,
-                description = description.trim(),
-                updatedAt = System.currentTimeMillis()
+        database.withTransaction {
+            mealCollectionDao.upsertCollection(
+                current.copy(
+                    title = trimmedTitle,
+                    description = description.trim(),
+                    updatedAt = System.currentTimeMillis()
+                )
             )
-        )
+        }
     }
 
     suspend fun deleteCollection(collectionId: Long) {
-        mealCollectionDao.deleteMealsForCollection(collectionId)
-        mealCollectionDao.deleteCollection(collectionId)
+        database.withTransaction {
+            mealCollectionDao.deleteMealsForCollection(collectionId)
+            mealCollectionDao.deleteCollection(collectionId)
+        }
     }
 
     suspend fun togglePinned(collectionId: Long) {
-        val current = mealCollectionDao.getCollection(collectionId) ?: return
-        mealCollectionDao.upsertCollection(
-            current.copy(
-                isPinned = !current.isPinned,
-                updatedAt = System.currentTimeMillis()
+        database.withTransaction {
+            val current = mealCollectionDao.getCollection(collectionId) ?: return@withTransaction
+            mealCollectionDao.upsertCollection(
+                current.copy(
+                    isPinned = !current.isPinned,
+                    updatedAt = System.currentTimeMillis()
+                )
             )
-        )
+        }
     }
 
     suspend fun addMealToCollection(collectionId: Long, meal: Meal) {
-        offlineMealService.cacheMeal(meal)
-        mealCollectionDao.addMealToCollection(
-            CollectionMealCrossRef(collectionId = collectionId, mealId = meal.idMeal)
-        )
-        touchCollection(collectionId)
+        database.withTransaction {
+            offlineMealService.cacheMeal(meal)
+            mealCollectionDao.addMealToCollection(
+                CollectionMealCrossRef(collectionId = collectionId, mealId = meal.idMeal)
+            )
+            touchCollection(collectionId)
+        }
     }
 
     suspend fun removeMealFromCollection(collectionId: Long, mealId: String) {
-        mealCollectionDao.removeMealFromCollection(collectionId, mealId)
-        touchCollection(collectionId)
+        database.withTransaction {
+            mealCollectionDao.removeMealFromCollection(collectionId, mealId)
+            touchCollection(collectionId)
+        }
     }
 
     suspend fun removeMealFromAllCollections(mealId: String) {
-        mealCollectionDao.removeMealFromAllCollections(mealId)
+        database.withTransaction {
+            mealCollectionDao.removeMealFromAllCollections(mealId)
+        }
     }
 
     private suspend fun touchCollection(collectionId: Long) {

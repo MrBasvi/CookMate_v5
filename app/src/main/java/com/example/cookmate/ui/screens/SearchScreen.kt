@@ -108,7 +108,7 @@ fun SearchScreen(
 
             is MealUiState.Success -> {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(state.meals) { meal ->
+                    items(state.meals, key = { it.idMeal }) { meal ->
                         val note = uiState.mealNotes[meal.idMeal]
                         val supportingText = buildString {
                             if (meal.idMeal.startsWith("local-")) {

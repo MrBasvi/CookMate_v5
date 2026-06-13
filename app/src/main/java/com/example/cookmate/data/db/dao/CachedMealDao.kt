@@ -4,6 +4,8 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
 import com.example.cookmate.data.db.entity.CachedMealEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -30,11 +32,25 @@ interface CachedMealDao {
     @Query("SELECT * FROM cached_meals WHERE idMeal LIKE 'local-%' ORDER BY lastSyncedAt DESC")
     fun observeLocalMeals(): Flow<List<CachedMealEntity>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertMeal(meal: CachedMealEntity)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertMeal(meal: CachedMealEntity): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertMeals(meals: List<CachedMealEntity>)
+    @Update
+    suspend fun updateMeal(meal: CachedMealEntity)
+
+    @Transaction
+    suspend fun upsertMeal(meal: CachedMealEntity) {
+        if (insertMeal(meal) == -1L) {
+            updateMeal(meal)
+        }
+    }
+
+    @Transaction
+    suspend fun upsertMeals(meals: List<CachedMealEntity>) {
+        meals.forEach { meal ->
+            upsertMeal(meal)
+        }
+    }
 
     @Query("DELETE FROM cached_meals WHERE idMeal = :mealId")
     suspend fun deleteMeal(mealId: String)

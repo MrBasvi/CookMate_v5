@@ -23,7 +23,8 @@ data class IngredientDraft(
 @Composable
 fun IngredientEditor(
     items: SnapshotStateList<IngredientDraft>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onChanged: () -> Unit = {}
 ) {
     Column(
         modifier = modifier,
@@ -36,14 +37,20 @@ fun IngredientEditor(
             ) {
                 OutlinedTextField(
                     value = item.name,
-                    onValueChange = { items[index] = item.copy(name = it) },
+                    onValueChange = {
+                        items[index] = item.copy(name = it)
+                        onChanged()
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Ингредиент") },
                     singleLine = true
                 )
                 OutlinedTextField(
                     value = item.measure,
-                    onValueChange = { items[index] = item.copy(measure = it) },
+                    onValueChange = {
+                        items[index] = item.copy(measure = it)
+                        onChanged()
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Количество") },
                     singleLine = true
@@ -55,6 +62,7 @@ fun IngredientEditor(
                         } else {
                             items[index] = IngredientDraft()
                         }
+                        onChanged()
                     }
                 ) {
                     Icon(
@@ -65,7 +73,12 @@ fun IngredientEditor(
             }
         }
 
-        TextButton(onClick = { items.add(IngredientDraft()) }) {
+        TextButton(
+            onClick = {
+                items.add(IngredientDraft())
+                onChanged()
+            }
+        ) {
             Text("Добавить ингредиент")
         }
     }

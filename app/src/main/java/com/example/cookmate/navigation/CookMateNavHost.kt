@@ -12,16 +12,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -36,6 +39,7 @@ import com.example.cookmate.ui.screens.RecentScreen
 import com.example.cookmate.ui.screens.SearchScreen
 import com.example.cookmate.ui.screens.SettingsScreen
 import com.example.cookmate.ui.screens.ShoppingListScreen
+import com.example.cookmate.ui.state.CookMateUiEvent
 import com.example.cookmate.ui.state.CookMateUiState
 import com.example.cookmate.ui.viewmodel.CookMateViewModel
 
@@ -54,10 +58,15 @@ fun CookMateNavHost(
     navController: NavHostController = rememberNavController(),
     viewModel: CookMateViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState(initial = CookMateUiState())
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle(
+        initialValue = CookMateUiState(),
+        lifecycle = lifecycle
+    )
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val startDestinationApplied = remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val bottomItems = listOf(
         BottomNavItem(CookMateRoutes.SEARCH, "Поиск", Icons.Default.Search),
@@ -82,8 +91,17 @@ fun CookMateNavHost(
         }
     }
 
+    LaunchedEffect(viewModel) {
+        viewModel.uiEvents.collect { event ->
+            when (event) {
+                is CookMateUiEvent.Message -> snackbarHostState.showSnackbar(event.text)
+            }
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             NavigationBar {
                 bottomItems.forEach { item ->

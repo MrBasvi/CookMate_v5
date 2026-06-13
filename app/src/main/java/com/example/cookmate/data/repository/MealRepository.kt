@@ -13,6 +13,9 @@ import kotlinx.coroutines.withContext
 class MealRepository @Inject constructor(
     private val apiService: MealApiService
 ) : MealDetailsFetcher {
+    private companion object {
+        const val FALLBACK_VALUE = "Не указано"
+    }
 
     suspend fun searchMealsByName(name: String): List<Meal> = withContext(Dispatchers.IO) {
         try {
@@ -66,12 +69,15 @@ class MealRepository @Inject constructor(
 
         return Meal(
             idMeal = idMeal,
-            strMeal = strMeal,
-            strCategory = strCategory,
-            strArea = strArea,
-            strInstructions = strInstructions,
-            strMealThumb = strMealThumb,
+            strMeal = strMeal.orFallback(FALLBACK_VALUE),
+            strCategory = strCategory.orFallback(FALLBACK_VALUE),
+            strArea = strArea.orFallback(FALLBACK_VALUE),
+            strInstructions = strInstructions.orFallback(FALLBACK_VALUE),
+            strMealThumb = strMealThumb.orEmpty(),
             ingredients = ingredients
         )
     }
+
+    private fun String?.orFallback(defaultValue: String): String =
+        this?.trim()?.takeIf { it.isNotEmpty() } ?: defaultValue
 }

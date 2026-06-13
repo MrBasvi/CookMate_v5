@@ -3,6 +3,12 @@
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.cookmate.data.model.Meal
+import com.example.cookmate.data.model.MealCollectionDetail
+import com.example.cookmate.data.model.MealCollectionMembership
+import com.example.cookmate.data.model.MealCollectionSummary
+import com.example.cookmate.data.model.MealNote
+import com.example.cookmate.data.model.RecentMeal
+import com.example.cookmate.data.model.ShoppingListItem
 import com.example.cookmate.data.preferences.PreferencesManager
 import com.example.cookmate.data.repository.MealRepository
 import com.example.cookmate.data.service.FavouriteMealService
@@ -16,17 +22,21 @@ import com.example.cookmate.domain.DiscoverFeedReducer
 import com.example.cookmate.domain.RemoteSearchState
 import com.example.cookmate.domain.SavedMealsSyncUseCase
 import com.example.cookmate.sync.SyncScheduler
+import com.example.cookmate.ui.state.CookMateUiEvent
 import com.example.cookmate.ui.state.CookMateUiState
 import com.example.cookmate.ui.state.MealDetailUiState
+import com.example.cookmate.ui.state.SyncUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
@@ -63,51 +73,56 @@ class CookMateViewModel @Inject constructor(
     private val _selectedCollectionId = MutableStateFlow<Long?>(null)
     private val _mealDetailState = MutableStateFlow<MealDetailUiState>(MealDetailUiState.Loading)
     private val _refreshRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    private val _syncStatusMessage = MutableStateFlow<String?>(null)
+    private val _syncUiState = MutableStateFlow<SyncUiState>(SyncUiState.Idle)
+    private val _uiEvents = MutableSharedFlow<CookMateUiEvent>(extraBufferCapacity = 16)
+    val uiEvents = _uiEvents.asSharedFlow()
+    private val _shoppingFeedbackMessage = MutableStateFlow<String?>(null)
+    private var detailJob: Job? = null
+    private var syncJob: Job? = null
 
     private val normalizedQuery = _searchQuery
         .map { it.trim() }
         .debounce(350)
         .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
     private val favoriteMeals = favouriteService.getAllFavourites()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val favoriteIds = favoriteMeals
         .map { meals -> meals.map { it.idMeal } }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val showOnlyFavorites = preferencesManager.showOnlyFavoritesFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     private val offlineOnlyMode = preferencesManager.offlineOnlyModeFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     private val backgroundSyncEnabled = preferencesManager.backgroundSyncEnabledFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
     private val historyLimit = preferencesManager.historyLimitFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, 30)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 30)
 
     private val startDestination = preferencesManager.startDestinationFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
     private val recentMeals = historyLimit
         .flatMapLatest { limit -> offlineMealService.observeRecentMeals(limit) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val collections = mealCollectionService.observeCollections()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val mealNotes = mealNoteService.observeAllNotes()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     private val localMeals = offlineMealService.observeLocalMeals()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val shoppingListItems = shoppingListService.observeItems()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val cachedSearchMatches = normalizedQuery
         .flatMapLatest { query ->
@@ -117,7 +132,7 @@ class CookMateViewModel @Inject constructor(
                 offlineMealService.searchCachedMeals(query)
             }
         }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val remoteSearchState = combine(
         normalizedQuery,
@@ -140,117 +155,171 @@ class CookMateViewModel @Inject constructor(
     }.catch { throwable ->
         if (throwable is CancellationException) throw throwable
         emit(RemoteSearchState.Error(throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0432\u044b\u043f\u043e\u043b\u043d\u0438\u0442\u044c \u043f\u043e\u0438\u0441\u043a"))
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, RemoteSearchState.Idle)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RemoteSearchState.Idle)
 
     private val selectedMealNote = _selectedMealId
         .flatMapLatest { mealId ->
             if (mealId == null) flowOf(null) else mealNoteService.observeMealNote(mealId)
         }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val selectedMealMemberships = _selectedMealId
         .flatMapLatest { mealId ->
             if (mealId == null) flowOf(emptyList()) else mealCollectionService.observeMemberships(mealId)
         }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val selectedCollection = _selectedCollectionId
         .flatMapLatest { collectionId ->
             if (collectionId == null) flowOf(null) else mealCollectionService.observeCollection(collectionId)
         }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val uiState: StateFlow<CookMateUiState> = combine(
+    private val searchSnapshot = combine(
         _searchQuery,
         cachedSearchMatches,
         recentMeals,
+        showOnlyFavorites,
+        remoteSearchState
+    ) { query, cachedMatches, recent, savedOnly, searchState ->
+        SearchSnapshot(
+            query = query,
+            cachedMatches = cachedMatches,
+            recentMeals = recent,
+            showOnlyFavorites = savedOnly,
+            remoteState = searchState
+        )
+    }
+
+    private val savedMealsSnapshot = combine(
         favoriteIds,
         favoriteMeals,
-        localMeals,
-        showOnlyFavorites,
-        remoteSearchState,
+        localMeals
+    ) { favorites, favoriteMealsValue, localMealsValue ->
+        SavedMealsSnapshot(
+            favoriteIds = favorites,
+            favoriteMeals = favoriteMealsValue,
+            localMeals = localMealsValue
+        )
+    }
+
+    private val detailSnapshot = combine(
         _selectedMealId,
         _mealDetailState,
+        selectedMealMemberships,
+        selectedMealNote
+    ) { selectedMealId, mealDetailState, memberships, selectedNote ->
+        DetailSnapshot(
+            selectedMealId = selectedMealId,
+            mealDetailState = mealDetailState,
+            memberships = memberships,
+            selectedNote = selectedNote
+        )
+    }
+
+    private val collectionSnapshot = combine(
         collections,
         _selectedCollectionId,
-        selectedCollection,
-        selectedMealMemberships,
+        selectedCollection
+    ) { collectionList, selectedCollectionId, selectedCollectionValue ->
+        CollectionSnapshot(
+            collections = collectionList,
+            selectedCollectionId = selectedCollectionId,
+            selectedCollection = selectedCollectionValue
+        )
+    }
+
+    private val shoppingSnapshot = combine(
         shoppingListItems,
-        mealNotes,
-        selectedMealNote,
+        _shoppingFeedbackMessage
+    ) { items, feedback ->
+        ShoppingSnapshot(items = items, feedbackMessage = feedback)
+    }
+
+    private val settingsSnapshot = combine(
         offlineOnlyMode,
         backgroundSyncEnabled,
         historyLimit,
         startDestination,
-        _syncStatusMessage
-    ) { values ->
-        val query = values[0] as String
-        val normalizedQuery = query.trim()
-        val cachedMatches = values[1] as List<Meal>
-        val recent = values[2] as List<com.example.cookmate.data.model.RecentMeal>
-        val favorites = values[3] as List<String>
-        val favoriteMealsValue = values[4] as List<Meal>
-        val localMealsValue = values[5] as List<Meal>
-        val savedOnly = values[6] as Boolean
-        val searchState = values[7] as RemoteSearchState
-        val selectedMealId = values[8] as String?
-        val mealDetailState = values[9] as MealDetailUiState
-        val collectionList = values[10] as List<com.example.cookmate.data.model.MealCollectionSummary>
-        val selectedCollectionId = values[11] as Long?
-        val selectedCollectionValue = values[12] as com.example.cookmate.data.model.MealCollectionDetail?
-        val memberships = values[13] as List<com.example.cookmate.data.model.MealCollectionMembership>
-        val shoppingItems = values[14] as List<com.example.cookmate.data.model.ShoppingListItem>
-        val notes = values[15] as Map<String, com.example.cookmate.data.model.MealNote>
-        val selectedNote = values[16] as com.example.cookmate.data.model.MealNote?
-        val offlineOnly = values[17] as Boolean
-        val syncEnabled = values[18] as Boolean
-        val historyLimitValue = values[19] as Int
-        val startDestinationValue = values[20] as String
-        val syncStatus = values[21] as String?
+        _syncUiState
+    ) { offlineOnly, syncEnabled, historyLimitValue, startDestinationValue, syncState ->
+        SettingsSnapshot(
+            offlineOnly = offlineOnly,
+            syncEnabled = syncEnabled,
+            historyLimit = historyLimitValue,
+            startDestination = startDestinationValue,
+            syncState = syncState
+        )
+    }
+
+    private val contentSnapshot = combine(
+        searchSnapshot,
+        savedMealsSnapshot,
+        detailSnapshot,
+        collectionSnapshot,
+        shoppingSnapshot
+    ) { search, savedMeals, detail, collection, shopping ->
+        ContentSnapshot(
+            search = search,
+            savedMeals = savedMeals,
+            detail = detail,
+            collection = collection,
+            shopping = shopping
+        )
+    }
+
+    val uiState: StateFlow<CookMateUiState> = combine(
+        contentSnapshot,
+        mealNotes,
+        settingsSnapshot
+    ) { content, notes, settings ->
+        val normalizedQuery = content.search.query.trim()
 
         val listState = discoverFeedReducer.reduce(
             query = normalizedQuery,
-            cachedMatches = cachedMatches,
-            recentMeals = recent.map { it.meal },
-            favoriteIds = favorites.toSet(),
-            showOnlyFavorites = savedOnly,
-            remoteState = searchState
+            cachedMatches = content.search.cachedMatches,
+            recentMeals = content.search.recentMeals.map { it.meal },
+            favoriteIds = content.savedMeals.favoriteIds.toSet(),
+            showOnlyFavorites = content.search.showOnlyFavorites,
+            remoteState = content.search.remoteState
         )
 
-        val detailMeal = (mealDetailState as? MealDetailUiState.Success)?.meal
-        val collectionMeals = selectedCollectionValue?.meals.orEmpty()
+        val detailMeal = (content.detail.mealDetailState as? MealDetailUiState.Success)?.meal
+        val collectionMeals = content.collection.selectedCollection?.meals.orEmpty()
         val allMeals = (
-            cachedMatches +
-                recent.map { it.meal } +
-                favoriteMealsValue +
-                localMealsValue +
+            content.search.cachedMatches +
+                content.search.recentMeals.map { it.meal } +
+                content.savedMeals.favoriteMeals +
+                content.savedMeals.localMeals +
                 collectionMeals +
                 listOfNotNull(detailMeal)
             ).distinctBy { it.idMeal }
 
         CookMateUiState(
-            searchQuery = query,
+            searchQuery = content.search.query,
             mealListState = listState,
-            mealDetailState = if (selectedMealId == null) null else mealDetailState,
-            selectedMealId = selectedMealId,
-            selectedCollectionId = selectedCollectionId,
-            favorites = favorites,
-            favoriteMeals = favoriteMealsValue,
-            localMeals = localMealsValue,
+            mealDetailState = if (content.detail.selectedMealId == null) null else content.detail.mealDetailState,
+            selectedMealId = content.detail.selectedMealId,
+            selectedCollectionId = content.collection.selectedCollectionId,
+            favorites = content.savedMeals.favoriteIds,
+            favoriteMeals = content.savedMeals.favoriteMeals,
+            localMeals = content.savedMeals.localMeals,
             allMeals = allMeals,
-            showOnlyFavorites = savedOnly,
-            collections = collectionList,
-            selectedCollection = selectedCollectionValue,
-            selectedMealMemberships = memberships,
-            recentMeals = recent,
-            shoppingListItems = shoppingItems,
+            showOnlyFavorites = content.search.showOnlyFavorites,
+            collections = content.collection.collections,
+            selectedCollection = content.collection.selectedCollection,
+            selectedMealMemberships = content.detail.memberships,
+            recentMeals = content.search.recentMeals,
+            shoppingListItems = content.shopping.items,
             mealNotes = notes,
-            selectedMealNote = selectedNote,
-            offlineOnlyMode = offlineOnly,
-            backgroundSyncEnabled = syncEnabled,
-            historyLimit = historyLimitValue,
-            startDestination = startDestinationValue,
-            syncStatusMessage = syncStatus
+            selectedMealNote = content.detail.selectedNote,
+            offlineOnlyMode = settings.offlineOnly,
+            backgroundSyncEnabled = settings.syncEnabled,
+            historyLimit = settings.historyLimit,
+            startDestination = settings.startDestination,
+            syncUiState = settings.syncState,
+            syncStatusMessage = settings.syncState.toStatusMessage(),
+            shoppingFeedbackMessage = content.shopping.feedbackMessage
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CookMateUiState())
 
@@ -259,23 +328,30 @@ class CookMateViewModel @Inject constructor(
     }
 
     fun retrySearch() {
-        _refreshRequests.tryEmit(Unit)
+        viewModelScope.launch {
+            _refreshRequests.emit(Unit)
+        }
     }
 
     fun selectMealForDetail(mealId: String) {
         _selectedMealId.value = mealId
         _mealDetailState.value = MealDetailUiState.Loading
+        _shoppingFeedbackMessage.value = null
 
-        viewModelScope.launch {
+        detailJob?.cancel()
+        detailJob = viewModelScope.launch {
             val cachedMeal = offlineMealService.getCachedMeal(mealId)
             if (cachedMeal != null) {
-                _mealDetailState.value = MealDetailUiState.Success(cachedMeal)
+                updateDetailStateIfCurrent(mealId, MealDetailUiState.Success(cachedMeal))
                 offlineMealService.markViewed(cachedMeal, historyLimit.value)
             }
 
             if (offlineOnlyMode.value) {
                 if (cachedMeal == null) {
-                    _mealDetailState.value = MealDetailUiState.Error("\u042d\u0442\u043e\u0442 \u0440\u0435\u0446\u0435\u043f\u0442 \u0435\u0449\u0451 \u043d\u0435 \u0441\u043e\u0445\u0440\u0430\u043d\u0451\u043d \u0434\u043b\u044f \u043e\u0444\u043b\u0430\u0439\u043d-\u0440\u0435\u0436\u0438\u043c\u0430")
+                    updateDetailStateIfCurrent(
+                        mealId,
+                        MealDetailUiState.Error("\u042d\u0442\u043e\u0442 \u0440\u0435\u0446\u0435\u043f\u0442 \u0435\u0449\u0451 \u043d\u0435 \u0441\u043e\u0445\u0440\u0430\u043d\u0451\u043d \u0434\u043b\u044f \u043e\u0444\u043b\u0430\u0439\u043d-\u0440\u0435\u0436\u0438\u043c\u0430")
+                    )
                 }
                 return@launch
             }
@@ -284,13 +360,16 @@ class CookMateViewModel @Inject constructor(
                 val remoteMeal = repository.getMealDetails(mealId)
                 offlineMealService.cacheMeal(remoteMeal)
                 offlineMealService.markViewed(remoteMeal, historyLimit.value)
-                _mealDetailState.value = MealDetailUiState.Success(remoteMeal)
+                updateDetailStateIfCurrent(mealId, MealDetailUiState.Success(remoteMeal))
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
                 if (cachedMeal == null) {
-                    _mealDetailState.value = MealDetailUiState.Error(
-                        throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0440\u0435\u0446\u0435\u043f\u0442"
+                    updateDetailStateIfCurrent(
+                        mealId,
+                        MealDetailUiState.Error(
+                            throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0440\u0435\u0446\u0435\u043f\u0442"
+                        )
                     )
                 }
             }
@@ -298,8 +377,11 @@ class CookMateViewModel @Inject constructor(
     }
 
     fun clearDetail() {
+        detailJob?.cancel()
+        detailJob = null
         _selectedMealId.value = null
         _mealDetailState.value = MealDetailUiState.Loading
+        _shoppingFeedbackMessage.value = null
     }
 
     fun toggleFavorite(mealId: String) {
@@ -315,7 +397,7 @@ class CookMateViewModel @Inject constructor(
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u0438\u0437\u0431\u0440\u0430\u043d\u043d\u043e\u0435"
+                publishMessage(throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u0438\u0437\u0431\u0440\u0430\u043d\u043d\u043e\u0435")
             }
         }
     }
@@ -328,11 +410,11 @@ class CookMateViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 mealNoteService.saveNote(mealId, noteText, rating)
-                _syncStatusMessage.value = "\u0417\u0430\u043c\u0435\u0442\u043a\u0430 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0430"
+                publishMessage("\u0417\u0430\u043c\u0435\u0442\u043a\u0430 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0430")
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0437\u0430\u043c\u0435\u0442\u043a\u0443"
+                publishMessage(throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0437\u0430\u043c\u0435\u0442\u043a\u0443")
             }
         }
     }
@@ -342,11 +424,11 @@ class CookMateViewModel @Inject constructor(
             try {
                 val collectionId = mealCollectionService.createCollection(title, description)
                 _selectedCollectionId.value = collectionId
-                _syncStatusMessage.value = "\u041a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u044f \u0441\u043e\u0437\u0434\u0430\u043d\u0430"
+                publishMessage("\u041a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u044f \u0441\u043e\u0437\u0434\u0430\u043d\u0430")
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u043a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u044e"
+                publishMessage(throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u043a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u044e")
             }
         }
     }
@@ -355,13 +437,13 @@ class CookMateViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 mealCollectionService.updateCollection(collectionId, title, description)
-                _syncStatusMessage.value = "Коллекция обновлена"
+                publishMessage("Коллекция обновлена")
             } catch (throwable: IllegalArgumentException) {
-                _syncStatusMessage.value = throwable.message ?: "Проверьте данные коллекции"
+                publishMessage(throwable.message ?: "Проверьте данные коллекции")
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "Не удалось обновить коллекцию"
+                publishMessage(throwable.localizedMessage ?: "Не удалось обновить коллекцию")
             }
         }
     }
@@ -388,13 +470,13 @@ class CookMateViewModel @Inject constructor(
                     )
                 )
                 offlineMealService.cacheMeal(meal)
-                _syncStatusMessage.value = "Свой рецепт сохранён"
+                publishMessage("Свой рецепт сохранён")
             } catch (throwable: IllegalArgumentException) {
-                _syncStatusMessage.value = throwable.message ?: "Проверьте данные рецепта"
+                publishMessage(throwable.message ?: "Проверьте данные рецепта")
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "Не удалось сохранить свой рецепт"
+                publishMessage(throwable.localizedMessage ?: "Не удалось сохранить свой рецепт")
             }
         }
     }
@@ -408,7 +490,7 @@ class CookMateViewModel @Inject constructor(
         imageUrl: String
     ) {
         if (!isLocalMealId(mealId)) {
-            _syncStatusMessage.value = "Редактировать можно только свои рецепты"
+            publishMessage("Редактировать можно только свои рецепты")
             return
         }
         viewModelScope.launch {
@@ -432,19 +514,19 @@ class CookMateViewModel @Inject constructor(
                 if (_selectedMealId.value == mealId) {
                     _mealDetailState.value = MealDetailUiState.Success(updatedMeal)
                 }
-                _syncStatusMessage.value = "Свой рецепт обновлён"
+                publishMessage("Свой рецепт обновлён")
             } catch (throwable: IllegalArgumentException) {
-                _syncStatusMessage.value = throwable.message ?: "Проверьте данные рецепта"
+                publishMessage(throwable.message ?: "Проверьте данные рецепта")
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "Не удалось обновить рецепт"
+                publishMessage(throwable.localizedMessage ?: "Не удалось обновить рецепт")
             }
         }
     }
     fun deleteCustomMeal(mealId: String) {
         if (!isLocalMealId(mealId)) {
-            _syncStatusMessage.value = "\u0423\u0434\u0430\u043b\u044f\u0442\u044c \u043c\u043e\u0436\u043d\u043e \u0442\u043e\u043b\u044c\u043a\u043e \u0441\u0432\u043e\u0438 \u0440\u0435\u0446\u0435\u043f\u0442\u044b"
+            publishMessage("\u0423\u0434\u0430\u043b\u044f\u0442\u044c \u043c\u043e\u0436\u043d\u043e \u0442\u043e\u043b\u044c\u043a\u043e \u0441\u0432\u043e\u0438 \u0440\u0435\u0446\u0435\u043f\u0442\u044b")
             return
         }
 
@@ -459,11 +541,11 @@ class CookMateViewModel @Inject constructor(
                     clearDetail()
                 }
 
-                _syncStatusMessage.value = "\u0421\u0432\u043e\u0439 \u0440\u0435\u0446\u0435\u043f\u0442 \u0443\u0434\u0430\u043b\u0451\u043d"
+                publishMessage("\u0421\u0432\u043e\u0439 \u0440\u0435\u0446\u0435\u043f\u0442 \u0443\u0434\u0430\u043b\u0451\u043d")
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0443\u0434\u0430\u043b\u0438\u0442\u044c \u0440\u0435\u0446\u0435\u043f\u0442"
+                publishMessage(throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0443\u0434\u0430\u043b\u0438\u0442\u044c \u0440\u0435\u0446\u0435\u043f\u0442")
             }
         }
     }
@@ -483,11 +565,11 @@ class CookMateViewModel @Inject constructor(
                 if (_selectedCollectionId.value == collectionId) {
                     _selectedCollectionId.value = null
                 }
-                _syncStatusMessage.value = "\u041a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u044f \u0443\u0434\u0430\u043b\u0435\u043d\u0430"
+                publishMessage("\u041a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u044f \u0443\u0434\u0430\u043b\u0435\u043d\u0430")
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0443\u0434\u0430\u043b\u0438\u0442\u044c \u043a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u044e"
+                publishMessage(throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0443\u0434\u0430\u043b\u0438\u0442\u044c \u043a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u044e")
             }
         }
     }
@@ -499,7 +581,7 @@ class CookMateViewModel @Inject constructor(
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u043a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u044e"
+                publishMessage(throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u043a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u044e")
             }
         }
     }
@@ -507,19 +589,18 @@ class CookMateViewModel @Inject constructor(
     fun toggleMealInCollection(collectionId: Long, mealId: String) {
         viewModelScope.launch {
             try {
-                val membership = uiState.value.selectedMealMemberships.firstOrNull { it.collectionId == collectionId }
-                if (membership?.containsMeal == true) {
+                if (mealCollectionService.isMealInCollection(collectionId, mealId)) {
                     mealCollectionService.removeMealFromCollection(collectionId, mealId)
-                    _syncStatusMessage.value = "\u0420\u0435\u0446\u0435\u043f\u0442 \u0443\u0431\u0440\u0430\u043d \u0438\u0437 \u043a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u0438"
+                    publishMessage("\u0420\u0435\u0446\u0435\u043f\u0442 \u0443\u0431\u0440\u0430\u043d \u0438\u0437 \u043a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u0438")
                 } else {
                     val meal = resolveMeal(mealId)
                     mealCollectionService.addMealToCollection(collectionId, meal)
-                    _syncStatusMessage.value = "\u0420\u0435\u0446\u0435\u043f\u0442 \u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d \u0432 \u043a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u044e"
+                    publishMessage("\u0420\u0435\u0446\u0435\u043f\u0442 \u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d \u0432 \u043a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u044e")
                 }
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u0441\u043e\u0441\u0442\u0430\u0432 \u043a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u0438"
+                publishMessage(throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u0441\u043e\u0441\u0442\u0430\u0432 \u043a\u043e\u043b\u043b\u0435\u043a\u0446\u0438\u0438")
             }
         }
     }
@@ -531,7 +612,7 @@ class CookMateViewModel @Inject constructor(
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0443\u0431\u0440\u0430\u0442\u044c \u0440\u0435\u0446\u0435\u043f\u0442"
+                publishMessage(throwable.localizedMessage ?: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0443\u0431\u0440\u0430\u0442\u044c \u0440\u0435\u0446\u0435\u043f\u0442")
             }
         }
     }
@@ -541,7 +622,7 @@ class CookMateViewModel @Inject constructor(
             try {
                 val meal = resolveMeal(mealId)
                 val affectedCount = shoppingListService.addIngredientsFromMeal(meal)
-                _syncStatusMessage.value = if (affectedCount == 0) {
+                _shoppingFeedbackMessage.value = if (affectedCount == 0) {
                     "В рецепте нет ингредиентов для списка покупок"
                 } else {
                     "В список покупок добавлено позиций: $affectedCount"
@@ -549,7 +630,7 @@ class CookMateViewModel @Inject constructor(
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "Не удалось добавить ингредиенты"
+                _shoppingFeedbackMessage.value = throwable.localizedMessage ?: "Не удалось добавить ингредиенты"
             }
         }
     }
@@ -558,15 +639,17 @@ class CookMateViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val added = shoppingListService.addManualItem(name, measure)
-                _syncStatusMessage.value = if (added) {
-                    "Позиция добавлена в список покупок"
-                } else {
-                    "Название позиции не может быть пустым"
-                }
+                publishMessage(
+                    if (added) {
+                        "Позиция добавлена в список покупок"
+                    } else {
+                        "Название позиции не может быть пустым"
+                    }
+                )
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "Не удалось добавить позицию"
+                publishMessage(throwable.localizedMessage ?: "Не удалось добавить позицию")
             }
         }
     }
@@ -579,7 +662,7 @@ class CookMateViewModel @Inject constructor(
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "Не удалось обновить список покупок"
+                publishMessage(throwable.localizedMessage ?: "Не удалось обновить список покупок")
             }
         }
     }
@@ -591,7 +674,7 @@ class CookMateViewModel @Inject constructor(
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "Не удалось удалить позицию"
+                publishMessage(throwable.localizedMessage ?: "Не удалось удалить позицию")
             }
         }
     }
@@ -600,11 +683,11 @@ class CookMateViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 shoppingListService.clearCheckedItems()
-                _syncStatusMessage.value = "Купленные позиции очищены"
+                publishMessage("Купленные позиции очищены")
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "Не удалось очистить список покупок"
+                publishMessage(throwable.localizedMessage ?: "Не удалось очистить список покупок")
             }
         }
     }
@@ -613,11 +696,11 @@ class CookMateViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 shoppingListService.clearAllItems()
-                _syncStatusMessage.value = "Список покупок полностью очищен"
+                publishMessage("Список покупок полностью очищен")
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "Не удалось очистить список покупок"
+                publishMessage(throwable.localizedMessage ?: "Не удалось очистить список покупок")
             }
         }
     }
@@ -631,7 +714,7 @@ class CookMateViewModel @Inject constructor(
     fun setOfflineOnlyMode(enabled: Boolean) {
         viewModelScope.launch {
             preferencesManager.setOfflineOnlyMode(enabled)
-            _refreshRequests.tryEmit(Unit)
+            _refreshRequests.emit(Unit)
         }
     }
 
@@ -659,23 +742,34 @@ class CookMateViewModel @Inject constructor(
     }
 
     fun clearSyncStatusMessage() {
-        _syncStatusMessage.value = null
+        _syncUiState.value = SyncUiState.Idle
     }
 
     fun syncSavedMealsNow() {
-        viewModelScope.launch {
+        if (syncJob?.isActive == true) {
+            return
+        }
+
+        syncJob = viewModelScope.launch {
             try {
-                _syncStatusMessage.value = "\u0418\u0434\u0451\u0442 \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u044f..."
+                _syncUiState.value = SyncUiState.Running
                 val result = savedMealsSyncUseCase.sync(historyLimit.value)
-                _syncStatusMessage.value = if (result.failedMealIds.isEmpty()) {
-                    "\u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u043d\u043e \u0440\u0435\u0446\u0435\u043f\u0442\u043e\u0432: ${result.syncedCount}"
+                _syncUiState.value = if (result.failedMealIds.isEmpty()) {
+                    SyncUiState.Success(result.syncedCount)
                 } else {
-                    "\u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u043d\u043e ${result.syncedCount} \u0438\u0437 ${result.requestedCount}"
+                    SyncUiState.Partial(
+                        syncedCount = result.syncedCount,
+                        requestedCount = result.requestedCount
+                    )
                 }
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Exception) {
-                _syncStatusMessage.value = throwable.localizedMessage ?: "\u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u044f \u043d\u0435 \u0443\u0434\u0430\u043b\u0430\u0441\u044c"
+                _syncUiState.value = SyncUiState.Error(
+                    throwable.localizedMessage ?: "\u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u044f \u043d\u0435 \u0443\u0434\u0430\u043b\u0430\u0441\u044c"
+                )
+            } finally {
+                syncJob = null
             }
         }
     }
@@ -686,7 +780,78 @@ class CookMateViewModel @Inject constructor(
             ?: repository.getMealDetails(mealId)
     }
 
+    private fun updateDetailStateIfCurrent(mealId: String, state: MealDetailUiState) {
+        if (_selectedMealId.value == mealId) {
+            _mealDetailState.value = state
+        }
+    }
+
+    private fun publishMessage(message: String) {
+        viewModelScope.launch {
+            _uiEvents.emit(CookMateUiEvent.Message(message))
+        }
+    }
+
+    private fun SyncUiState.toStatusMessage(): String? {
+        return when (this) {
+            SyncUiState.Idle -> null
+            SyncUiState.Running -> "\u0418\u0434\u0451\u0442 \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u044f..."
+            is SyncUiState.Success -> "\u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u043d\u043e \u0440\u0435\u0446\u0435\u043f\u0442\u043e\u0432: $syncedCount"
+            is SyncUiState.Partial -> "\u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u043d\u043e $syncedCount \u0438\u0437 $requestedCount"
+            is SyncUiState.Error -> message
+        }
+    }
+
     private fun isLocalMealId(mealId: String): Boolean = mealId.startsWith("local-")
+
+    private data class SearchSnapshot(
+        val query: String,
+        val cachedMatches: List<Meal>,
+        val recentMeals: List<RecentMeal>,
+        val showOnlyFavorites: Boolean,
+        val remoteState: RemoteSearchState
+    )
+
+    private data class SavedMealsSnapshot(
+        val favoriteIds: List<String>,
+        val favoriteMeals: List<Meal>,
+        val localMeals: List<Meal>
+    )
+
+    private data class DetailSnapshot(
+        val selectedMealId: String?,
+        val mealDetailState: MealDetailUiState,
+        val memberships: List<MealCollectionMembership>,
+        val selectedNote: MealNote?
+    )
+
+    private data class CollectionSnapshot(
+        val collections: List<MealCollectionSummary>,
+        val selectedCollectionId: Long?,
+        val selectedCollection: MealCollectionDetail?
+    )
+
+    private data class ShoppingSnapshot(
+        val items: List<ShoppingListItem>,
+        val feedbackMessage: String?
+    )
+
+    private data class SettingsSnapshot(
+        val offlineOnly: Boolean,
+        val syncEnabled: Boolean,
+        val historyLimit: Int,
+        val startDestination: String,
+        val syncState: SyncUiState
+    )
+
+    private data class ContentSnapshot(
+        val search: SearchSnapshot,
+        val savedMeals: SavedMealsSnapshot,
+        val detail: DetailSnapshot,
+        val collection: CollectionSnapshot,
+        val shopping: ShoppingSnapshot
+    )
+
     private data class SearchRequest(
         val query: String,
         val offlineOnly: Boolean
