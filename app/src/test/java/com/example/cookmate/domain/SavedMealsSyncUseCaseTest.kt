@@ -29,6 +29,7 @@ class SavedMealsSyncUseCaseTest {
                 override suspend fun getFavoriteIds(): List<String> = listOf("1", "2")
                 override suspend fun getCollectionMealIds(): List<String> = listOf("2", "3")
                 override suspend fun getRecentMealIds(limit: Int): List<String> = listOf("4", "1")
+                override suspend fun getLocalMealIds(): List<String> = emptyList()
                 override suspend fun cacheSyncedMeal(meal: Meal) {
                     cachedMeals += meal
                 }
@@ -58,6 +59,7 @@ class SavedMealsSyncUseCaseTest {
                 override suspend fun getFavoriteIds(): List<String> = emptyList()
                 override suspend fun getCollectionMealIds(): List<String> = emptyList()
                 override suspend fun getRecentMealIds(limit: Int): List<String> = emptyList()
+                override suspend fun getLocalMealIds(): List<String> = emptyList()
                 override suspend fun cacheSyncedMeal(meal: Meal) = Unit
                 override suspend fun clearStaleCache(cutoff: Long, protectedMealIds: List<String>) = Unit
             },

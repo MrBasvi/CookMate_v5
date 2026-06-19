@@ -20,11 +20,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -40,7 +39,6 @@ import com.example.cookmate.ui.screens.SearchScreen
 import com.example.cookmate.ui.screens.SettingsScreen
 import com.example.cookmate.ui.screens.ShoppingListScreen
 import com.example.cookmate.ui.state.CookMateUiEvent
-import com.example.cookmate.ui.state.CookMateUiState
 import com.example.cookmate.ui.viewmodel.CookMateViewModel
 
 object CookMateRoutes {
@@ -58,11 +56,7 @@ fun CookMateNavHost(
     navController: NavHostController = rememberNavController(),
     viewModel: CookMateViewModel = hiltViewModel()
 ) {
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle(
-        initialValue = CookMateUiState(),
-        lifecycle = lifecycle
-    )
+    val uiState by viewModel.uiState.collectAsState()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val startDestinationApplied = remember { mutableStateOf(false) }
@@ -76,17 +70,24 @@ fun CookMateNavHost(
         BottomNavItem(CookMateRoutes.SETTINGS, "Опции", Icons.Default.Settings)
     )
 
-    LaunchedEffect(uiState.startDestination) {
+    LaunchedEffect(uiState.startDestination, currentDestination?.route) {
         val targetRoute = uiState.startDestination
-        if (!startDestinationApplied.value && targetRoute.isNotBlank()) {
+        if (targetRoute.isBlank() || startDestinationApplied.value) {
+            return@LaunchedEffect
+        }
+
+        if (currentDestination?.route == CookMateRoutes.SETTINGS) {
             startDestinationApplied.value = true
-            if (targetRoute != CookMateRoutes.SEARCH) {
-                navController.navigate(targetRoute) {
-                    popUpTo(navController.graph.findStartDestination().id) {
-                        inclusive = true
-                    }
-                    launchSingleTop = true
+            return@LaunchedEffect
+        }
+
+        startDestinationApplied.value = true
+        if (targetRoute != CookMateRoutes.SEARCH) {
+            navController.navigate(targetRoute) {
+                popUpTo(navController.graph.findStartDestination().id) {
+                    inclusive = true
                 }
+                launchSingleTop = true
             }
         }
     }

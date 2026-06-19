@@ -26,15 +26,17 @@ class ShoppingListService @Inject constructor(
     }
 
     suspend fun addIngredientsFromMeal(meal: Meal): Int {
-        var affectedCount = 0
-        meal.ingredients
+        val normalizedIngredients = meal.ingredients
             .map { ingredient -> ingredient.name.trim() to ingredient.measure.trim() }
             .filter { (name, _) -> name.isNotEmpty() }
-            .forEach { (name, measure) ->
-                mergeOrInsert(name, measure)
-                affectedCount++
+        val groupedIngredients = normalizedIngredients.groupingBy { it }.eachCount()
+
+        groupedIngredients.forEach { (ingredient, count) ->
+            repeat(count) {
+                mergeOrInsert(ingredient.first, ingredient.second)
             }
-        return affectedCount
+        }
+        return groupedIngredients.size
     }
 
     suspend fun setChecked(item: ShoppingListItem, checked: Boolean) {

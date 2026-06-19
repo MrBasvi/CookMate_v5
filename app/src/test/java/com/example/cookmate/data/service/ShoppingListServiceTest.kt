@@ -16,7 +16,7 @@ import org.junit.Test
 class ShoppingListServiceTest {
 
     @Test
-    fun addIngredientsFromMeal_mergesDuplicateUncheckedItems() = runTest {
+    fun addIngredientsFromMeal_mergesDuplicateUncheckedItems_andCountsDistinctEntries() = runTest {
         val dao = FakeShoppingListDao()
         val service = ShoppingListService(dao)
 
@@ -37,7 +37,7 @@ class ShoppingListServiceTest {
         val affected = service.addIngredientsFromMeal(meal)
         val items = service.observeItems().first()
 
-        assertEquals(3, affected)
+        assertEquals(2, affected)
         assertEquals(2, items.size)
         assertEquals("Tomato", items.first { it.ingredientName == "Tomato" }.ingredientName)
         assertEquals(2, items.first { it.ingredientName == "Tomato" }.quantityCount)

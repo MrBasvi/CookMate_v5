@@ -88,7 +88,19 @@ fun DetailScreen(
     var areaDraft by remember(mealId) { mutableStateOf("") }
     var instructionsDraft by remember(mealId) { mutableStateOf("") }
     var imageUrlDraft by remember(mealId) { mutableStateOf("") }
+    var editTitleError by remember(mealId) { mutableStateOf<String?>(null) }
+    var editCategoryError by remember(mealId) { mutableStateOf<String?>(null) }
+    var editAreaError by remember(mealId) { mutableStateOf<String?>(null) }
+    var editInstructionsError by remember(mealId) { mutableStateOf<String?>(null) }
+    var editIngredientsError by remember(mealId) { mutableStateOf<String?>(null) }
     val ingredientDrafts = remember(mealId) { mutableStateListOf(IngredientDraft()) }
+    val clearEditErrors = {
+        editTitleError = null
+        editCategoryError = null
+        editAreaError = null
+        editInstructionsError = null
+        editIngredientsError = null
+    }
 
     LaunchedEffect(currentMeal?.idMeal, showEditDialog) {
         if (showEditDialog && currentMeal != null) {
@@ -105,6 +117,7 @@ fun DetailScreen(
                     }
                 )
             )
+            clearEditErrors()
         }
     }
 
@@ -387,31 +400,55 @@ fun DetailScreen(
 
     if (showEditDialog && currentMeal != null) {
         AlertDialog(
-            onDismissRequest = { showEditDialog = false },
+            onDismissRequest = {
+                clearEditErrors()
+                showEditDialog = false
+            },
             title = { Text("Редактировать свой рецепт") },
             text = {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     item {
                         OutlinedTextField(
                             value = titleDraft,
-                            onValueChange = { titleDraft = it },
+                            onValueChange = {
+                                titleDraft = it
+                                editTitleError = null
+                            },
                             label = { Text("Название") },
+                            isError = editTitleError != null,
+                            supportingText = editTitleError?.let { error ->
+                                { Text(error) }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                     item {
                         OutlinedTextField(
                             value = categoryDraft,
-                            onValueChange = { categoryDraft = it },
+                            onValueChange = {
+                                categoryDraft = it
+                                editCategoryError = null
+                            },
                             label = { Text("Категория") },
+                            isError = editCategoryError != null,
+                            supportingText = editCategoryError?.let { error ->
+                                { Text(error) }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                     item {
                         OutlinedTextField(
                             value = areaDraft,
-                            onValueChange = { areaDraft = it },
+                            onValueChange = {
+                                areaDraft = it
+                                editAreaError = null
+                            },
                             label = { Text("Кухня или страна") },
+                            isError = editAreaError != null,
+                            supportingText = editAreaError?.let { error ->
+                                { Text(error) }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -431,13 +468,31 @@ fun DetailScreen(
                         )
                     }
                     item {
-                        IngredientEditor(items = ingredientDrafts, modifier = Modifier.fillMaxWidth())
+                        IngredientEditor(
+                            items = ingredientDrafts,
+                            modifier = Modifier.fillMaxWidth(),
+                            onChanged = { editIngredientsError = null }
+                        )
+                        editIngredientsError?.let { error ->
+                            Text(
+                                text = error,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                     item {
                         OutlinedTextField(
                             value = instructionsDraft,
-                            onValueChange = { instructionsDraft = it },
+                            onValueChange = {
+                                instructionsDraft = it
+                                editInstructionsError = null
+                            },
                             label = { Text("Инструкция") },
+                            isError = editInstructionsError != null,
+                            supportingText = editInstructionsError?.let { error ->
+                                { Text(error) }
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             minLines = 4
                         )
@@ -447,23 +502,46 @@ fun DetailScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onUpdateCustomMeal(
-                            mealId,
-                            titleDraft,
-                            categoryDraft,
-                            areaDraft,
-                            instructionsDraft,
-                            ingredientDraftsToText(ingredientDrafts),
-                            imageUrlDraft
-                        )
-                        showEditDialog = false
+                        editTitleError = requiredFieldError(titleDraft, "название рецепта")
+                        editCategoryError = requiredFieldError(categoryDraft, "категорию")
+                        editAreaError = requiredFieldError(areaDraft, "кухню или страну")
+                        editInstructionsError = requiredFieldError(instructionsDraft, "инструкцию")
+                        editIngredientsError = if (ingredientDrafts.none { it.name.isNotBlank() }) {
+                            "Добавьте хотя бы один ингредиент"
+                        } else {
+                            null
+                        }
+
+                        val hasErrors = listOf(
+                            editTitleError,
+                            editCategoryError,
+                            editAreaError,
+                            editInstructionsError,
+                            editIngredientsError
+                        ).any { it != null }
+
+                        if (!hasErrors) {
+                            onUpdateCustomMeal(
+                                mealId,
+                                titleDraft,
+                                categoryDraft,
+                                areaDraft,
+                                instructionsDraft,
+                                ingredientDraftsToText(ingredientDrafts),
+                                imageUrlDraft
+                            )
+                            showEditDialog = false
+                        }
                     }
                 ) {
                     Text("Сохранить")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showEditDialog = false }) {
+                TextButton(onClick = {
+                    clearEditErrors()
+                    showEditDialog = false
+                }) {
                     Text("Отмена")
                 }
             }
@@ -493,5 +571,13 @@ fun DetailScreen(
                 }
             }
         )
+    }
+}
+
+private fun requiredFieldError(value: String, fieldName: String): String? {
+    return if (value.isBlank()) {
+        "Заполните $fieldName"
+    } else {
+        null
     }
 }

@@ -11,17 +11,19 @@ class SavedMealsSyncUseCase @Inject constructor(
 ) {
 
     suspend fun sync(historyLimit: Int): SavedMealsSyncResult {
+        val localMealIds = localSyncDataSource.getLocalMealIds()
         val targetIds = selector.selectTargets(
             favoriteIds = localSyncDataSource.getFavoriteIds(),
             collectionIds = localSyncDataSource.getCollectionMealIds(),
             recentIds = localSyncDataSource.getRecentMealIds(historyLimit),
             historyLimit = historyLimit
         )
+        val protectedMealIds = (targetIds + localMealIds).distinct()
 
         if (targetIds.isEmpty()) {
             localSyncDataSource.clearStaleCache(
                 cutoff = System.currentTimeMillis() - CACHE_TTL_MS,
-                protectedMealIds = emptyList()
+                protectedMealIds = protectedMealIds
             )
             return SavedMealsSyncResult(0, 0, emptyList())
         }
@@ -43,7 +45,7 @@ class SavedMealsSyncUseCase @Inject constructor(
 
         localSyncDataSource.clearStaleCache(
             cutoff = System.currentTimeMillis() - CACHE_TTL_MS,
-            protectedMealIds = targetIds
+            protectedMealIds = protectedMealIds
         )
 
         return SavedMealsSyncResult(
@@ -72,6 +74,7 @@ interface SyncLocalDataSource {
     suspend fun getFavoriteIds(): List<String>
     suspend fun getCollectionMealIds(): List<String>
     suspend fun getRecentMealIds(limit: Int): List<String>
+    suspend fun getLocalMealIds(): List<String>
     suspend fun cacheSyncedMeal(meal: Meal)
     suspend fun clearStaleCache(cutoff: Long, protectedMealIds: List<String>)
 }

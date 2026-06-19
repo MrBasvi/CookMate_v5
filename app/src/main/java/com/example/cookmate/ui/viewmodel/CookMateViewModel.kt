@@ -2,6 +2,8 @@
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
+import com.example.cookmate.data.db.CookMateDatabase
 import com.example.cookmate.data.model.Meal
 import com.example.cookmate.data.model.MealCollectionDetail
 import com.example.cookmate.data.model.MealCollectionMembership
@@ -54,6 +56,7 @@ import java.util.UUID
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @HiltViewModel
 class CookMateViewModel @Inject constructor(
+    private val database: CookMateDatabase,
     private val repository: MealRepository,
     private val favouriteService: FavouriteMealService,
     private val offlineMealService: OfflineMealService,
@@ -346,6 +349,16 @@ class CookMateViewModel @Inject constructor(
                 offlineMealService.markViewed(cachedMeal, historyLimit.value)
             }
 
+            if (isLocalMealId(mealId)) {
+                if (cachedMeal == null) {
+                    updateDetailStateIfCurrent(
+                        mealId,
+                        MealDetailUiState.Error("Свой рецепт не найден")
+                    )
+                }
+                return@launch
+            }
+
             if (offlineOnlyMode.value) {
                 if (cachedMeal == null) {
                     updateDetailStateIfCurrent(
@@ -532,10 +545,12 @@ class CookMateViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                favouriteService.removeFavourite(mealId)
-                mealNoteService.deleteNote(mealId)
-                mealCollectionService.removeMealFromAllCollections(mealId)
-                offlineMealService.deleteCachedMeal(mealId)
+                database.withTransaction {
+                    favouriteService.removeFavourite(mealId)
+                    mealNoteService.deleteNote(mealId)
+                    mealCollectionService.removeMealFromAllCollections(mealId)
+                    offlineMealService.deleteCachedMeal(mealId)
+                }
 
                 if (_selectedMealId.value == mealId) {
                     clearDetail()
@@ -775,6 +790,11 @@ class CookMateViewModel @Inject constructor(
     }
 
     private suspend fun resolveMeal(mealId: String): Meal {
+        if (isLocalMealId(mealId)) {
+            return offlineMealService.getCachedMeal(mealId)
+                ?: throw IllegalStateException("Свой рецепт не найден")
+        }
+
         return uiState.value.allMeals.firstOrNull { it.idMeal == mealId }
             ?: offlineMealService.getCachedMeal(mealId)
             ?: repository.getMealDetails(mealId)
@@ -857,5 +877,4 @@ class CookMateViewModel @Inject constructor(
         val offlineOnly: Boolean
     )
 }
-
 

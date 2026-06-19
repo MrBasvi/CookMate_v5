@@ -32,6 +32,9 @@ interface CachedMealDao {
     @Query("SELECT * FROM cached_meals WHERE idMeal LIKE 'local-%' ORDER BY lastSyncedAt DESC")
     fun observeLocalMeals(): Flow<List<CachedMealEntity>>
 
+    @Query("SELECT idMeal FROM cached_meals WHERE idMeal LIKE 'local-%'")
+    suspend fun getLocalMealIds(): List<String>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertMeal(meal: CachedMealEntity): Long
 

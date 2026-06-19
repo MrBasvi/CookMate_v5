@@ -79,6 +79,9 @@ class OfflineMealService @Inject constructor(
     override suspend fun getRecentMealIds(limit: Int): List<String> =
         recentMealDao.getRecentMealIds(limit)
 
+    override suspend fun getLocalMealIds(): List<String> =
+        cachedMealDao.getLocalMealIds()
+
     override suspend fun cacheSyncedMeal(meal: Meal) {
         database.withTransaction {
             cachedMealDao.upsertMeal(meal.toEntity())

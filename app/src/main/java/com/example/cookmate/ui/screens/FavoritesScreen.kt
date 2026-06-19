@@ -55,28 +55,15 @@ fun FavoritesScreen(
     onToggleCollectionPin: (Long) -> Unit
 ) {
     var showCreateCollectionDialog by remember { mutableStateOf(false) }
-    var collectionTitleDraft by remember { mutableStateOf("") }
-    var collectionDescriptionDraft by remember { mutableStateOf("") }
+    var collectionDraft by remember { mutableStateOf(CollectionDraft()) }
 
     var showCreateMealDialog by remember { mutableStateOf(false) }
-    var mealTitleDraft by remember { mutableStateOf("") }
-    var mealCategoryDraft by remember { mutableStateOf("") }
-    var mealAreaDraft by remember { mutableStateOf("") }
-    var mealInstructionsDraft by remember { mutableStateOf("") }
-    var mealImageUrlDraft by remember { mutableStateOf("") }
-    var mealTitleError by remember { mutableStateOf<String?>(null) }
-    var mealCategoryError by remember { mutableStateOf<String?>(null) }
-    var mealAreaError by remember { mutableStateOf<String?>(null) }
-    var mealInstructionsError by remember { mutableStateOf<String?>(null) }
-    var mealIngredientsError by remember { mutableStateOf<String?>(null) }
+    var mealDraft by remember { mutableStateOf(MealDraft()) }
+    var mealErrors by remember { mutableStateOf(MealFormErrors()) }
     val ingredientDrafts = remember { mutableStateListOf(IngredientDraft()) }
     var selectedTab by remember { mutableIntStateOf(BOOK_TAB_MY_RECIPES) }
     val clearMealErrors = {
-        mealTitleError = null
-        mealCategoryError = null
-        mealAreaError = null
-        mealInstructionsError = null
-        mealIngredientsError = null
+        mealErrors = MealFormErrors()
     }
 
     Column(
@@ -158,7 +145,10 @@ fun FavoritesScreen(
 
             BOOK_TAB_COLLECTIONS -> {
                 Button(
-                    onClick = { showCreateCollectionDialog = true },
+                    onClick = {
+                        collectionDraft = CollectionDraft()
+                        showCreateCollectionDialog = true
+                    },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Создать коллекцию")
@@ -304,18 +294,21 @@ fun FavoritesScreen(
 
     if (showCreateCollectionDialog) {
         AlertDialog(
-            onDismissRequest = { showCreateCollectionDialog = false },
+            onDismissRequest = {
+                collectionDraft = CollectionDraft()
+                showCreateCollectionDialog = false
+            },
             title = { Text("Новая коллекция") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
-                        value = collectionTitleDraft,
-                        onValueChange = { collectionTitleDraft = it },
+                        value = collectionDraft.title,
+                        onValueChange = { collectionDraft = collectionDraft.copy(title = it) },
                         label = { Text("Название") }
                     )
                     OutlinedTextField(
-                        value = collectionDescriptionDraft,
-                        onValueChange = { collectionDescriptionDraft = it },
+                        value = collectionDraft.description,
+                        onValueChange = { collectionDraft = collectionDraft.copy(description = it) },
                         label = { Text("Описание") }
                     )
                 }
@@ -323,11 +316,10 @@ fun FavoritesScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (collectionTitleDraft.isNotBlank()) {
-                            onCreateCollection(collectionTitleDraft, collectionDescriptionDraft)
+                        if (collectionDraft.title.isNotBlank()) {
+                            onCreateCollection(collectionDraft.title, collectionDraft.description)
                             showCreateCollectionDialog = false
-                            collectionTitleDraft = ""
-                            collectionDescriptionDraft = ""
+                            collectionDraft = CollectionDraft()
                         }
                     }
                 ) {
@@ -335,7 +327,10 @@ fun FavoritesScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCreateCollectionDialog = false }) {
+                TextButton(onClick = {
+                    collectionDraft = CollectionDraft()
+                    showCreateCollectionDialog = false
+                }) {
                     Text("Отмена")
                 }
             }
@@ -346,6 +341,7 @@ fun FavoritesScreen(
         AlertDialog(
             onDismissRequest = {
                 clearMealErrors()
+                mealDraft = MealDraft()
                 showCreateMealDialog = false
             },
             title = { Text("Свой рецепт") },
@@ -353,14 +349,14 @@ fun FavoritesScreen(
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     item {
                         OutlinedTextField(
-                            value = mealTitleDraft,
+                            value = mealDraft.title,
                             onValueChange = {
-                                mealTitleDraft = it
-                                mealTitleError = null
+                                mealDraft = mealDraft.copy(title = it)
+                                mealErrors = mealErrors.copy(title = null)
                             },
                             label = { Text("Название рецепта") },
-                            isError = mealTitleError != null,
-                            supportingText = mealTitleError?.let { error ->
+                            isError = mealErrors.title != null,
+                            supportingText = mealErrors.title?.let { error ->
                                 { Text(error) }
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -368,14 +364,14 @@ fun FavoritesScreen(
                     }
                     item {
                         OutlinedTextField(
-                            value = mealCategoryDraft,
+                            value = mealDraft.category,
                             onValueChange = {
-                                mealCategoryDraft = it
-                                mealCategoryError = null
+                                mealDraft = mealDraft.copy(category = it)
+                                mealErrors = mealErrors.copy(category = null)
                             },
                             label = { Text("Категория") },
-                            isError = mealCategoryError != null,
-                            supportingText = mealCategoryError?.let { error ->
+                            isError = mealErrors.category != null,
+                            supportingText = mealErrors.category?.let { error ->
                                 { Text(error) }
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -383,14 +379,14 @@ fun FavoritesScreen(
                     }
                     item {
                         OutlinedTextField(
-                            value = mealAreaDraft,
+                            value = mealDraft.area,
                             onValueChange = {
-                                mealAreaDraft = it
-                                mealAreaError = null
+                                mealDraft = mealDraft.copy(area = it)
+                                mealErrors = mealErrors.copy(area = null)
                             },
                             label = { Text("Кухня или страна") },
-                            isError = mealAreaError != null,
-                            supportingText = mealAreaError?.let { error ->
+                            isError = mealErrors.area != null,
+                            supportingText = mealErrors.area?.let { error ->
                                 { Text(error) }
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -398,8 +394,8 @@ fun FavoritesScreen(
                     }
                     item {
                         OutlinedTextField(
-                            value = mealImageUrlDraft,
-                            onValueChange = { mealImageUrlDraft = it },
+                            value = mealDraft.imageUrl,
+                            onValueChange = { mealDraft = mealDraft.copy(imageUrl = it) },
                             label = { Text("URL обложки") },
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -415,9 +411,9 @@ fun FavoritesScreen(
                         IngredientEditor(
                             items = ingredientDrafts,
                             modifier = Modifier.fillMaxWidth(),
-                            onChanged = { mealIngredientsError = null }
+                            onChanged = { mealErrors = mealErrors.copy(ingredients = null) }
                         )
-                        mealIngredientsError?.let { error ->
+                        mealErrors.ingredients?.let { error ->
                             Text(
                                 text = error,
                                 color = MaterialTheme.colorScheme.error,
@@ -427,14 +423,14 @@ fun FavoritesScreen(
                     }
                     item {
                         OutlinedTextField(
-                            value = mealInstructionsDraft,
+                            value = mealDraft.instructions,
                             onValueChange = {
-                                mealInstructionsDraft = it
-                                mealInstructionsError = null
+                                mealDraft = mealDraft.copy(instructions = it)
+                                mealErrors = mealErrors.copy(instructions = null)
                             },
                             label = { Text("Инструкция") },
-                            isError = mealInstructionsError != null,
-                            supportingText = mealInstructionsError?.let { error ->
+                            isError = mealErrors.instructions != null,
+                            supportingText = mealErrors.instructions?.let { error ->
                                 { Text(error) }
                             },
                             modifier = Modifier.fillMaxWidth(),
@@ -446,51 +442,29 @@ fun FavoritesScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        mealTitleError = requiredFieldError(
-                            value = mealTitleDraft,
-                            fieldName = "название рецепта"
+                        mealErrors = MealFormErrors(
+                            title = requiredFieldError(mealDraft.title, "название рецепта"),
+                            category = requiredFieldError(mealDraft.category, "категорию"),
+                            area = requiredFieldError(mealDraft.area, "кухню или страну"),
+                            instructions = requiredFieldError(mealDraft.instructions, "инструкцию"),
+                            ingredients = if (ingredientDrafts.none { it.name.isNotBlank() }) {
+                                "Добавьте хотя бы один ингредиент"
+                            } else {
+                                null
+                            }
                         )
-                        mealCategoryError = requiredFieldError(
-                            value = mealCategoryDraft,
-                            fieldName = "категорию"
-                        )
-                        mealAreaError = requiredFieldError(
-                            value = mealAreaDraft,
-                            fieldName = "кухню или страну"
-                        )
-                        mealInstructionsError = requiredFieldError(
-                            value = mealInstructionsDraft,
-                            fieldName = "инструкцию"
-                        )
-                        mealIngredientsError = if (ingredientDrafts.none { it.name.isNotBlank() }) {
-                            "Добавьте хотя бы один ингредиент"
-                        } else {
-                            null
-                        }
 
-                        val hasErrors = listOf(
-                            mealTitleError,
-                            mealCategoryError,
-                            mealAreaError,
-                            mealInstructionsError,
-                            mealIngredientsError
-                        ).any { it != null }
-
-                        if (!hasErrors) {
+                        if (mealErrors.isValid()) {
                             onCreateCustomMeal(
-                                mealTitleDraft,
-                                mealCategoryDraft,
-                                mealAreaDraft,
-                                mealInstructionsDraft,
+                                mealDraft.title,
+                                mealDraft.category,
+                                mealDraft.area,
+                                mealDraft.instructions,
                                 ingredientDraftsToText(ingredientDrafts),
-                                mealImageUrlDraft
+                                mealDraft.imageUrl
                             )
                             showCreateMealDialog = false
-                            mealTitleDraft = ""
-                            mealCategoryDraft = ""
-                            mealAreaDraft = ""
-                            mealInstructionsDraft = ""
-                            mealImageUrlDraft = ""
+                            mealDraft = MealDraft()
                             clearMealErrors()
                             ingredientDrafts.clear()
                             ingredientDrafts.add(IngredientDraft())
@@ -504,6 +478,7 @@ fun FavoritesScreen(
                 TextButton(
                     onClick = {
                         clearMealErrors()
+                        mealDraft = MealDraft()
                         showCreateMealDialog = false
                     }
                 ) {
@@ -520,4 +495,27 @@ private fun requiredFieldError(value: String, fieldName: String): String? {
     } else {
         null
     }
+}
+
+private data class CollectionDraft(
+    val title: String = "",
+    val description: String = ""
+)
+
+private data class MealDraft(
+    val title: String = "",
+    val category: String = "",
+    val area: String = "",
+    val instructions: String = "",
+    val imageUrl: String = ""
+)
+
+private data class MealFormErrors(
+    val title: String? = null,
+    val category: String? = null,
+    val area: String? = null,
+    val instructions: String? = null,
+    val ingredients: String? = null
+) {
+    fun isValid(): Boolean = listOf(title, category, area, instructions, ingredients).all { it == null }
 }
